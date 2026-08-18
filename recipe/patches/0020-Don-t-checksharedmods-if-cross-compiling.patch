@@ -5,12 +5,12 @@ Subject: [PATCH 20/26] Don't checksharedmods if cross-compiling
 
 ---
  Makefile.pre.in |  6 +++---
- if_runnable.sh  | 15 +++++++++++++++
- 2 files changed, 18 insertions(+), 3 deletions(-)
+ if_runnable.sh  | 16 ++++++++++++++++
+ 2 files changed, 19 insertions(+), 3 deletions(-)
  create mode 100755 if_runnable.sh
 
 diff --git a/Makefile.pre.in b/Makefile.pre.in
-index bb51d42..34e9492 100644
+index bb51d42..a963cbc 100644
 --- a/Makefile.pre.in
 +++ b/Makefile.pre.in
 @@ -1629,11 +1629,11 @@ sharedmods: $(SHAREDMODS) pybuilddir.txt
@@ -18,30 +18,31 @@ index bb51d42..34e9492 100644
  checksharedmods: sharedmods $(PYTHON_FOR_BUILD_DEPS) $(BUILDPYTHON)
  	@if [ -n "@MISSING_STDLIB_CONFIG@" ]; then \
 -		$(RUNSHARED) $(PYTHON_FOR_BUILD) $(srcdir)/Tools/build/check_extension_modules.py --generate-missing-stdlib-info --with-missing-stdlib-config="@MISSING_STDLIB_CONFIG@"; \
-+		$(RUNSHARED) $(srcdir)/if_runnable.sh $(PYTHON_FOR_BUILD) $(srcdir)/Tools/build/check_extension_modules.py --generate-missing-stdlib-info --with-missing-stdlib-config="@MISSING_STDLIB_CONFIG@"; \
++		$(srcdir)/if_runnable.sh $(RUNSHARED) $(PYTHON_FOR_BUILD) $(srcdir)/Tools/build/check_extension_modules.py --generate-missing-stdlib-info --with-missing-stdlib-config="@MISSING_STDLIB_CONFIG@"; \
  	else \
 -		$(RUNSHARED) $(PYTHON_FOR_BUILD) $(srcdir)/Tools/build/check_extension_modules.py --generate-missing-stdlib-info; \
-+		$(RUNSHARED) $(srcdir)/if_runnable.sh $(PYTHON_FOR_BUILD) $(srcdir)/Tools/build/check_extension_modules.py --generate-missing-stdlib-info; \
++		$(srcdir)/if_runnable.sh $(RUNSHARED) $(PYTHON_FOR_BUILD) $(srcdir)/Tools/build/check_extension_modules.py --generate-missing-stdlib-info; \
  	fi
 -	@$(RUNSHARED) $(PYTHON_FOR_BUILD) $(srcdir)/Tools/build/check_extension_modules.py
-+	@$(RUNSHARED) $(srcdir)/if_runnable.sh $(PYTHON_FOR_BUILD) $(srcdir)/Tools/build/check_extension_modules.py
++	@$(srcdir)/if_runnable.sh $(RUNSHARED) $(PYTHON_FOR_BUILD) $(srcdir)/Tools/build/check_extension_modules.py
  
  .PHONY: rundsymutil
  rundsymutil: sharedmods $(PYTHON_FOR_BUILD_DEPS) $(BUILDPYTHON)
 diff --git a/if_runnable.sh b/if_runnable.sh
 new file mode 100755
-index 0000000..49dddd1
+index 0000000..7b43f08
 --- /dev/null
 +++ b/if_runnable.sh
-@@ -0,0 +1,15 @@
+@@ -0,0 +1,16 @@
 +#!/bin/bash
 +
 +if [[ "${target_platform}" == "${build_platform}" || "${CROSSCOMPILING_EMULATOR:-}" != "" ]]; then
 +  if [[ "$1" == "./"* ]]; then
 +    exec "$@"
 +  else
-+    # PYTHON_FOR_BUILD may be prefixed by VAR=value assignments; export those and
-+    # exec what follows (interpreter plus any number of arguments).
++    # RUNSHARED/PYTHON_FOR_BUILD are passed as arguments rather than as an
++    # environment prefix because macOS SIP strips DYLD_* when exec'ing this
++    # script. Re-export the leading VAR=value arguments, then exec the rest.
 +    while [[ $# -gt 1 && "$1" == *=* && "$1" != /* && "$1" != ./* ]]; do
 +      export "$1"
 +      shift

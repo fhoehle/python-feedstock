@@ -9,10 +9,10 @@ https://github.com/ContinuumIO/anaconda-issues/issues/1241
  1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/Modules/selectmodule.c b/Modules/selectmodule.c
-index 42bf1157ccc..fb3c27a9ac5 100644
+index b9fb776..e6102e8 100644
 --- a/Modules/selectmodule.c
 +++ b/Modules/selectmodule.c
-@@ -44,7 +44,7 @@
+@@ -45,7 +45,7 @@
     FD_SETSIZE higher before this; e.g., via compiler /D switch.
  */
  #if defined(MS_WINDOWS) && !defined(FD_SETSIZE)

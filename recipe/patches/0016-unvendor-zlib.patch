@@ -9,7 +9,7 @@ Subject: [PATCH 16/26] unvendor zlib
  2 files changed, 4 insertions(+), 76 deletions(-)
 
 diff --git a/PCbuild/pythoncore.vcxproj b/PCbuild/pythoncore.vcxproj
-index 8e45967a83c..3674ca1b267 100644
+index 66bedee..60ae1ca 100644
 --- a/PCbuild/pythoncore.vcxproj
 +++ b/PCbuild/pythoncore.vcxproj
 @@ -82,7 +82,7 @@
@@ -30,18 +30,18 @@ index 8e45967a83c..3674ca1b267 100644
        <AdditionalIncludeDirectories Condition="'$(UseJIT)' == 'true'">$(GeneratedJitStencilsDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
        <PreprocessorDefinitions>_USRDLL;Py_BUILD_CORE;Py_BUILD_CORE_BUILTIN;Py_ENABLE_SHARED;MS_DLL_ID="$(SysWinVer)";ZLIB_COMPAT;%(PreprocessorDefinitions)</PreprocessorDefinitions>
        <PreprocessorDefinitions Condition="$(IncludeExternals)">_Py_HAVE_ZLIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-@@ -112,8 +112,8 @@
-       <PreprocessorDefinitions Condition="'$(DisableRemoteDebug)' != 'true'">Py_REMOTE_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+@@ -113,8 +113,8 @@
+       <PreprocessorDefinitions Condition="'$(StackRefDebug)' == 'true'">Py_STACKREF_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
      </ClCompile>
      <Link>
 -      <AdditionalDependencies>version.lib;ws2_32.lib;pathcch.lib;bcrypt.lib;%(AdditionalDependencies)</AdditionalDependencies>
 -      <AdditionalDependencies Condition="$(IncludeExternals)">zlib-ng$(PyDebugExt).lib;%(AdditionalDependencies)</AdditionalDependencies>
 +      <AdditionalDependencies>version.lib;ws2_32.lib;pathcch.lib;bcrypt.lib;zlib.lib;%(AdditionalDependencies)</AdditionalDependencies>
 +      <AdditionalLibraryDirectories>$(condaDir)\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-     </Link>
-   </ItemDefinitionGroup>
-   <ItemGroup>
-@@ -681,12 +681,6 @@
+       <AdditionalDependencies Condition="'$(UseJIT)' == 'true' and $(Platform) == 'ARM64'">$(GeneratedJitStencilsDir)jit_shim-aarch64-pc-windows-msvc.o;%(AdditionalDependencies)</AdditionalDependencies>
+       <AdditionalDependencies Condition="'$(UseJIT)' == 'true' and $(Platform) == 'Win32'">$(GeneratedJitStencilsDir)jit_shim-i686-pc-windows-msvc.o;%(AdditionalDependencies)</AdditionalDependencies>
+       <AdditionalDependencies Condition="'$(UseJIT)' == 'true' and $(Platform) == 'x64'">$(GeneratedJitStencilsDir)jit_shim-x86_64-pc-windows-msvc.o;%(AdditionalDependencies)</AdditionalDependencies>
+@@ -711,12 +711,6 @@
    <ItemGroup>
      <ResourceCompile Include="..\PC\python_nt.rc" />
    </ItemGroup>
@@ -55,10 +55,10 @@ index 8e45967a83c..3674ca1b267 100644
    <ImportGroup Label="ExtensionTargets">
      <Import Project="regen.targets" />
 diff --git a/PCbuild/pythoncore.vcxproj.filters b/PCbuild/pythoncore.vcxproj.filters
-index 0e6d42cc959..144a0e3425a 100644
+index b9a8092..22c8a80 100644
 --- a/PCbuild/pythoncore.vcxproj.filters
 +++ b/PCbuild/pythoncore.vcxproj.filters
-@@ -900,39 +900,6 @@
+@@ -939,39 +939,6 @@
      <ClInclude Include="..\Include\internal\mimalloc\mimalloc\types.h">
        <Filter>Include\internal\mimalloc</Filter>
      </ClInclude>
@@ -98,7 +98,7 @@ index 0e6d42cc959..144a0e3425a 100644
      <ClInclude Include="..\Include\internal\pycore_structseq.h">
        <Filter>Include\internal</Filter>
      </ClInclude>
-@@ -1580,39 +1547,6 @@
+@@ -1643,39 +1610,6 @@
      <ClCompile Include="..\Objects\odictobject.c">
        <Filter>Objects</Filter>
      </ClCompile>

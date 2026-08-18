@@ -18,10 +18,10 @@ and this code using 10.16
  1 file changed, 4 insertions(+), 2 deletions(-)
 
 diff --git a/Modules/_ctypes/callproc.c b/Modules/_ctypes/callproc.c
-index 856b0376e5e..8d269ac5969 100644
+index 746034c..d42585c 100644
 --- a/Modules/_ctypes/callproc.c
 +++ b/Modules/_ctypes/callproc.c
-@@ -1509,7 +1509,7 @@ copy_com_pointer(PyObject *self, PyObject *args)
+@@ -1503,7 +1503,7 @@ copy_com_pointer(PyObject *self, PyObject *args)
  #ifdef HAVE_DYLD_SHARED_CACHE_CONTAINS_PATH
  #  ifdef HAVE_BUILTIN_AVAILABLE
  #    define HAVE_DYLD_SHARED_CACHE_CONTAINS_PATH_RUNTIME \
@@ -30,7 +30,7 @@ index 856b0376e5e..8d269ac5969 100644
  #  else
  #    define HAVE_DYLD_SHARED_CACHE_CONTAINS_PATH_RUNTIME \
           (_dyld_shared_cache_contains_path != NULL)
-@@ -1552,8 +1552,10 @@ static PyObject *py_dyld_shared_cache_contains_path(PyObject *self, PyObject *ar
+@@ -1546,8 +1546,10 @@ static PyObject *py_dyld_shared_cache_contains_path(PyObject *self, PyObject *ar
           if (PyUnicode_FSConverter(name, &name2) == 0)
               return NULL;
           name_str = PyBytes_AS_STRING(name2);

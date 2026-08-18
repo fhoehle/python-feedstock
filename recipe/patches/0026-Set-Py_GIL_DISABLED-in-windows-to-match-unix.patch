@@ -11,10 +11,10 @@ luxury of not having to do that.
  1 file changed, 2 insertions(+)
 
 diff --git a/PC/pyconfig.h b/PC/pyconfig.h
-index 92d327b1e35..ed0d9c0592b 100644
+index 5149fbc..52892d6 100644
 --- a/PC/pyconfig.h
 +++ b/PC/pyconfig.h
-@@ -105,6 +105,8 @@ WIN32 is still required for the locale module.
+@@ -110,6 +110,8 @@ WIN32 is still required for the locale module.
  #if Py_GIL_DISABLED == 0
  #undef Py_GIL_DISABLED
  #endif

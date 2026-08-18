@@ -33,10 +33,10 @@ Co-authored-by: Isuru Fernando <isuruf@gmail.com>
  1 file changed, 95 insertions(+)
 
 diff --git a/Python/pylifecycle.c b/Python/pylifecycle.c
-index 6241d6ddca1..fe2120940d2 100644
+index 516d467..156524c 100644
 --- a/Python/pylifecycle.c
 +++ b/Python/pylifecycle.c
-@@ -80,6 +80,10 @@
+@@ -88,6 +88,10 @@
  
  #ifdef MS_WINDOWS
  #  undef BYTE
@@ -47,7 +47,7 @@ index 6241d6ddca1..fe2120940d2 100644
  #endif
  
  #define PUTS(fd, str) (void)_Py_write_noraise(fd, str, (int)strlen(str))
-@@ -114,6 +118,93 @@ GENERATE_DEBUG_SECTION(PyRuntime, _PyRuntimeState _PyRuntime)
+@@ -122,6 +126,93 @@ GENERATE_DEBUG_SECTION(PyRuntime, _PyRuntimeState _PyRuntime)
  = _PyRuntimeState_INIT(_PyRuntime, _Py_Debug_Cookie);
  _Py_COMP_DIAG_POP
  
@@ -141,7 +141,7 @@ index 6241d6ddca1..fe2120940d2 100644
  
  static int runtime_initialized = 0;
  
-@@ -131,6 +222,10 @@ _PyRuntime_Initialize(void)
+@@ -139,6 +230,10 @@ _PyRuntime_Initialize(void)
      }
      runtime_initialized = 1;
  

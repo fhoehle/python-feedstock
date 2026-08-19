@@ -78,11 +78,17 @@ if "%PY_FREETHREADING%" == "yes" (
 :: tcl86t.lib/tk86t.lib -> LNK1181. Tell MSBuild the version we actually have;
 :: TkVersion defaults to TclVersion. Only Major/Minor reach the library names,
 :: the remaining components just have to parse as a System.Version.
+::
+:: This goes through the environment rather than build.bat's positional
+:: arguments: those are forwarded to MSBuild as bare `%1 %2 ...`, and cmd splits
+:: an argument on `=`, so /p:TclVersion=8.6.0.0 would arrive as the two separate
+:: switches `/p:TclVersion` and `8.6.0.0`. MSBuild picks up environment
+:: variables as properties, which satisfies the `== ''` condition in tcltk.props.
 if "%tk%"=="" (
   echo ERROR: the 'tk' variant is not set, cannot determine the Tcl/Tk version
   exit 1
 )
-set "TCLTK_MSBUILD_ARGS=/p:TclVersion=%tk%.0.0"
+set "TclVersion=%tk%.0.0"
 :: tcltk.props appends the threaded suffix "t" for Tcl 8 only.
 set "TCLTK_SUFFIX="
 for /F "tokens=1,2 delims=." %%i in ("%tk%") do (
@@ -96,7 +102,7 @@ if not exist "%LIBRARY_PREFIX%\lib\tcl%TCLTK_VERNODOTS%%TCLTK_SUFFIX%.lib" (
   dir "%LIBRARY_PREFIX%\lib\tcl*.lib" "%LIBRARY_PREFIX%\lib\tk*.lib"
   exit 1
 )
-echo Building against Tcl/Tk %tk% from %LIBRARY_PREFIX%
+echo Building against Tcl/Tk %TclVersion% from %LIBRARY_PREFIX%
 
 cd PCbuild
 
@@ -106,14 +112,14 @@ if "%CONDA_BUILD_CROSS_COMPILATION%" == "1" (
   REM No PGO. No externals, i.e. remove building extension modules
   REM we don't need.
   set LIBRARY_PREFIX=%BUILD_PREFIX%\\Library
-  call build.bat %CONFIG% %FREETHREADING% -m -E -v -p %BUILD_PLATFORM% %TCLTK_MSBUILD_ARGS%
+  call build.bat %CONFIG% %FREETHREADING% -m -E -v -p %BUILD_PLATFORM%
   if errorlevel 1 exit 1
 )
 endlocal
 :: Twice because:
 :: error : importlib_zipimport.h updated. You will need to rebuild pythoncore to see the changes.
-call build.bat %PGO% %CONFIG% %FREETHREADING% -m -e -v -p %HOST_PLATFORM% %TCLTK_MSBUILD_ARGS%
-call build.bat %PGO% %CONFIG% %FREETHREADING% -m -e -v -p %HOST_PLATFORM% %TCLTK_MSBUILD_ARGS%
+call build.bat %PGO% %CONFIG% %FREETHREADING% -m -e -v -p %HOST_PLATFORM%
+call build.bat %PGO% %CONFIG% %FREETHREADING% -m -e -v -p %HOST_PLATFORM%
 if errorlevel 1 exit 1
 cd ..
 

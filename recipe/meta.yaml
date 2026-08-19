@@ -159,10 +159,13 @@ outputs:
         - llvm-tools  # [osx]
         - ld_impl_{{ target_platform }}  # [linux]
         - binutils_impl_{{ target_platform }}  # [linux]
-        - clang-19         # [not win]
-        - llvm-tools-19    # [not win]
-        - clang 19.*       # [win]
-        - llvm-tools 19.*  # [win]
+        # Must match Tools/jit/_llvm.py:_LLVM_VERSION, which CPython 3.15
+        # bumped from 19 to 21. The JIT stencil build looks for this exact
+        # LLVM version and fails with "Can't find clang-<N>!" on a mismatch.
+        - clang-21         # [not win]
+        - llvm-tools-21    # [not win]
+        - clang 21.*       # [win]
+        - llvm-tools 21.*  # [win]
         - bzip2            # [build_platform != target_platform]
         - libsqlite        # [build_platform != target_platform]
         - liblzma-devel    # [build_platform != target_platform]

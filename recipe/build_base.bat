@@ -71,6 +71,33 @@ if "%PY_FREETHREADING%" == "yes" (
   set "EXE_T="
 )
 
+:: patches/0014-Unvendor-tcltk.patch points tclDir/tkDir/tcltkDir at the conda
+:: prefix but leaves TclVersion alone, and CPython 3.15 bumped its default from
+:: 8.6.15.0 to 9.0.4.0 (PCbuild/tcltk.props). That makes _tkinter link against
+:: tcl90.lib/tcl9tk90.lib/tommath.lib, while the tk package we depend on ships
+:: tcl86t.lib/tk86t.lib -> LNK1181. Tell MSBuild the version we actually have;
+:: TkVersion defaults to TclVersion. Only Major/Minor reach the library names,
+:: the remaining components just have to parse as a System.Version.
+if "%tk%"=="" (
+  echo ERROR: the 'tk' variant is not set, cannot determine the Tcl/Tk version
+  exit 1
+)
+set "TCLTK_MSBUILD_ARGS=/p:TclVersion=%tk%.0.0"
+:: tcltk.props appends the threaded suffix "t" for Tcl 8 only.
+set "TCLTK_SUFFIX="
+for /F "tokens=1,2 delims=." %%i in ("%tk%") do (
+  set "TCLTK_VERNODOTS=%%i%%j"
+  if "%%i"=="8" set "TCLTK_SUFFIX=t"
+)
+:: Fail here with a readable message rather than as an LNK1181 deep in the
+:: _tkinter link if tcltk.props and the installed tk package disagree.
+if not exist "%LIBRARY_PREFIX%\lib\tcl%TCLTK_VERNODOTS%%TCLTK_SUFFIX%.lib" (
+  echo ERROR: tcl%TCLTK_VERNODOTS%%TCLTK_SUFFIX%.lib not found in %LIBRARY_PREFIX%\lib
+  dir "%LIBRARY_PREFIX%\lib\tcl*.lib" "%LIBRARY_PREFIX%\lib\tk*.lib"
+  exit 1
+)
+echo Building against Tcl/Tk %tk% from %LIBRARY_PREFIX%
+
 cd PCbuild
 
 setlocal EnableDelayedExpansion
@@ -79,14 +106,14 @@ if "%CONDA_BUILD_CROSS_COMPILATION%" == "1" (
   REM No PGO. No externals, i.e. remove building extension modules
   REM we don't need.
   set LIBRARY_PREFIX=%BUILD_PREFIX%\\Library
-  call build.bat %CONFIG% %FREETHREADING% -m -E -v -p %BUILD_PLATFORM%
+  call build.bat %CONFIG% %FREETHREADING% -m -E -v -p %BUILD_PLATFORM% %TCLTK_MSBUILD_ARGS%
   if errorlevel 1 exit 1
 )
 endlocal
 :: Twice because:
 :: error : importlib_zipimport.h updated. You will need to rebuild pythoncore to see the changes.
-call build.bat %PGO% %CONFIG% %FREETHREADING% -m -e -v -p %HOST_PLATFORM%
-call build.bat %PGO% %CONFIG% %FREETHREADING% -m -e -v -p %HOST_PLATFORM%
+call build.bat %PGO% %CONFIG% %FREETHREADING% -m -e -v -p %HOST_PLATFORM% %TCLTK_MSBUILD_ARGS%
+call build.bat %PGO% %CONFIG% %FREETHREADING% -m -e -v -p %HOST_PLATFORM% %TCLTK_MSBUILD_ARGS%
 if errorlevel 1 exit 1
 cd ..
 

@@ -210,26 +210,32 @@ jobs:
             UPLOAD_PACKAGES: False
             build_platform: win-64
             build_workspace_dir: D:\\bld\\
-            docker_run_args: 
+            docker_run_args:
             free_disk_space: skip
             os: windows
             pagefile_size: 0
             resize_partitions: False
             runs_on: ['windows-2022']
             tools_install_dir: D:\Miniforge
+            # cross-compiled here, tested natively by the test-win-arm64 job
+            target_platform: win-arm64
+            freethreading: 'no'
           - CONFIG: win_arm64_freethreadingyes
             CONFIG_SHORT: win_arm64_freethreadingyes
             STORE_BUILD_ARTIFACTS: True
             UPLOAD_PACKAGES: False
             build_platform: win-64
             build_workspace_dir: D:\\bld\\
-            docker_run_args: 
+            docker_run_args:
             free_disk_space: skip
             os: windows
             pagefile_size: 0
             resize_partitions: False
             runs_on: ['windows-2022']
             tools_install_dir: D:\Miniforge
+            # cross-compiled here, tested natively by the test-win-arm64 job
+            target_platform: win-arm64
+            freethreading: 'yes'
     steps:
 
     - name: Checkout code
@@ -402,3 +408,251 @@ jobs:
         path: ${{ steps.prepare-artifacts.outputs.ENV_ARTIFACT_PATH }}
         retention-days: 14
       continue-on-error: true
+
+    # The artifacts above are 7z archives of the whole conda-bld tree, which is
+    # awkward to consume. For win-arm64 we additionally publish a plain local
+    # conda channel (the .conda files plus repodata.json) so the native ARM64
+    # test job below can point micromamba straight at it.
+    - name: Collect win-arm64 channel for native testing
+      id: collect-arm64-channel
+      if: ${{ success() && matrix.target_platform == 'win-arm64' }}
+      shell: cmd
+      env:
+        CONDA_BLD_PATH: ${{ matrix.build_workspace_dir }}
+      run: |
+        setlocal enableextensions enabledelayedexpansion
+        set "CHANNEL_DIR=%RUNNER_TEMP%\win-arm64-channel"
+        for %%S in (win-arm64 noarch) do (
+            if exist "%CONDA_BLD_PATH%\%%S" (
+                echo Collecting subdir %%S
+                mkdir "%CHANNEL_DIR%\%%S"
+                :: Copy every package format, not just .conda: repodata.json also
+                :: indexes the .tar.bz2 files that land here via downstream tests.
+                copy /Y "%CONDA_BLD_PATH%\%%S\*.conda" "%CHANNEL_DIR%\%%S\" >nul 2>nul
+                copy /Y "%CONDA_BLD_PATH%\%%S\*.tar.bz2" "%CHANNEL_DIR%\%%S\" >nul 2>nul
+                copy /Y "%CONDA_BLD_PATH%\%%S\repodata.json" "%CHANNEL_DIR%\%%S\" >nul
+                if !errorlevel! neq 0 exit /b !errorlevel!
+            )
+        )
+        if not exist "%CHANNEL_DIR%\win-arm64\repodata.json" (
+            echo ERROR: no win-arm64 packages found in %CONDA_BLD_PATH%
+            exit /b 1
+        )
+        :: Solvers request <channel>/noarch/repodata.json unconditionally and
+        :: error out if it is absent, so make sure the subdir always exists.
+        if not exist "%CHANNEL_DIR%\noarch\repodata.json" (
+            echo Creating an empty noarch subdir
+            if not exist "%CHANNEL_DIR%\noarch" mkdir "%CHANNEL_DIR%\noarch"
+            echo {"info":{"subdir":"noarch"},"packages":{},"packages.conda":{},"repodata_version":1}> "%CHANNEL_DIR%\noarch\repodata.json"
+        )
+        dir /S /B "%CHANNEL_DIR%"
+        echo CHANNEL_DIR=%CHANNEL_DIR%>> %GITHUB_OUTPUT%
+
+    - name: Store win-arm64 conda packages
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      if: ${{ success() && steps.collect-arm64-channel.outcome == 'success' }}
+      with:
+        name: win-arm64-channel_${{ matrix.CONFIG }}
+        path: ${{ steps.collect-arm64-channel.outputs.CHANNEL_DIR }}
+        retention-days: 14
+        if-no-files-found: error
+
+  # win-arm64 packages are cross-compiled on win-64 above, where run_win_build.bat
+  # passes --no-test to conda-build. This job installs the freshly built packages
+  # on a native ARM64 Windows runner and runs the meta.yaml Windows test commands
+  # (mirrored into recipe/test_win_arm64.bat) against them.
+  test-win-arm64:
+    name: test ${{ matrix.CONFIG }}
+    needs: build
+    # Do not let an unrelated win-64 matrix leg failing block the arm64 tests.
+    # If the arm64 build itself failed there is no artifact and the download
+    # step fails loudly.
+    if: ${{ !cancelled() }}
+    runs-on: windows-11-arm
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - CONFIG: win_arm64_freethreadingno
+            freethreading: 'no'
+          - CONFIG: win_arm64_freethreadingyes
+            freethreading: 'yes'
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+    - name: Confirm the runner is native ARM64
+      shell: cmd
+      run: |
+        echo PROCESSOR_ARCHITECTURE=%PROCESSOR_ARCHITECTURE%
+        if /i not "%PROCESSOR_ARCHITECTURE%" == "ARM64" (
+            echo ERROR: expected a native ARM64 runner
+            exit /b 1
+        )
+
+    - name: Download win-arm64 conda packages
+      uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+      with:
+        name: win-arm64-channel_${{ matrix.CONFIG }}
+        path: ${{ runner.temp }}\win-arm64-channel
+
+    - name: Install micromamba (native ARM64)
+      shell: cmd
+      env:
+        # conda itself has no win-arm64 build on conda-forge, so we use the
+        # native micromamba binary to create the test environment.
+        MICROMAMBA_VERSION: 2.9.0-0
+      run: |
+        setlocal enableextensions enabledelayedexpansion
+        set "MICROMAMBA_URL=https://github.com/mamba-org/micromamba-releases/releases/download/%MICROMAMBA_VERSION%/micromamba-win-arm64.exe"
+        mkdir "%RUNNER_TEMP%\micromamba"
+        echo Downloading micromamba %MICROMAMBA_VERSION% for win-arm64
+        powershell -ExecutionPolicy Bypass -Command "(New-Object Net.WebClient).DownloadFile('%MICROMAMBA_URL%', '%RUNNER_TEMP%\micromamba\micromamba.exe')"
+        if !errorlevel! neq 0 exit /b !errorlevel!
+        "%RUNNER_TEMP%\micromamba\micromamba.exe" --version
+        if !errorlevel! neq 0 exit /b !errorlevel!
+
+    # Read everything version-specific out of the build inputs rather than
+    # hardcoding it here, so this job keeps working across version bumps.
+    - name: Resolve the built python version and test variables
+      id: resolve-version
+      shell: pwsh
+      env:
+        FREETHREADING: ${{ matrix.freethreading }}
+        CONFIG: ${{ matrix.CONFIG }}
+      run: |
+        $ErrorActionPreference = 'Stop'
+
+        # recipe/run_test.py asserts the linked openssl/tk versions match the
+        # ones the recipe was built against, and reads them from the
+        # environment. Pull them from the same .ci_support config the build used.
+        $configFile = ".ci_support\$env:CONFIG.yaml"
+        $config = Get-Content $configFile -Raw
+        foreach ($key in @('openssl', 'tk')) {
+          $m = [regex]::Match($config, "(?m)^$key\:\s*\r?\n-\s*'?([^'\r\n]+?)'?\s*$")
+          if (-not $m.Success) { throw "could not read '$key' from $configFile" }
+          "$key=$($m.Groups[1].Value)" >> $env:GITHUB_OUTPUT
+          "$key -> $($m.Groups[1].Value)"
+        }
+
+        $repodata = "$env:RUNNER_TEMP\win-arm64-channel\win-arm64\repodata.json"
+        $data = Get-Content $repodata -Raw | ConvertFrom-Json
+        $suffix = if ($env:FREETHREADING -eq 'yes') { 't' } else { '' }
+        $pkgs = @()
+        foreach ($group in @($data.packages, $data.'packages.conda')) {
+          if ($null -eq $group) { continue }
+          foreach ($p in $group.PSObject.Properties) {
+            if ($p.Value.name -eq 'python') { $pkgs += $p.Value }
+          }
+        }
+        # Build strings look like <hash>_<buildnum>[_debug]_cp315[t]
+        $pkgs = $pkgs | Where-Object { $_.build -match "_cp\d+$suffix$" }
+        if ($pkgs.Count -eq 0) {
+          throw "no python package with a cp*$suffix ABI tag found in $repodata"
+        }
+        $version = ($pkgs | Select-Object -First 1).version
+        $abiTag = [regex]::Match(($pkgs | Select-Object -First 1).build, 'cp\d+t?$').Value
+        "Found python $version with ABI tag $abiTag"
+        "version=$version"  >> $env:GITHUB_OUTPUT
+        "abi_tag=$abiTag"   >> $env:GITHUB_OUTPUT
+
+    - name: Create test environment from the built packages
+      shell: cmd
+      env:
+        PY_VERSION: ${{ steps.resolve-version.outputs.version }}
+        ABI_TAG: ${{ steps.resolve-version.outputs.abi_tag }}
+      run: |
+        setlocal enableextensions enabledelayedexpansion
+        set "MAMBA_ROOT_PREFIX=%RUNNER_TEMP%\mamba-root"
+        set "MAMBA_EXE=%RUNNER_TEMP%\micromamba\micromamba.exe"
+        set "TEST_PREFIX=%RUNNER_TEMP%\test-env"
+        :: Local channel first, so the freshly built packages win over
+        :: anything of the same name already on conda-forge.
+        set "LOCAL_CHANNEL=file:///%RUNNER_TEMP:\=/%/win-arm64-channel"
+        echo Local channel: !LOCAL_CHANNEL!
+        echo Installing python=%PY_VERSION% build tag %ABI_TAG%
+        :: --platform win-arm64 is implied on this runner, but be explicit so a
+        :: misconfigured runner fails loudly instead of silently testing win-64.
+        :: The exact version=build pins are what keep conda-forge from
+        :: substituting its own python for the one we just built; the following
+        :: step verifies that. ripgrep/cmake/ninja mirror the meta.yaml
+        :: test/requires entries; the compilers listed there are unavailable for
+        :: win-arm64 (vs2022_win-arm64 needs vswhere, which is win-64 only), so
+        :: the runner's own MSVC is used for the cmake test instead.
+        "%MAMBA_EXE%" create --yes --root-prefix "%MAMBA_ROOT_PREFIX%" --prefix "%TEST_PREFIX%" ^
+            --platform win-arm64 ^
+            --channel "!LOCAL_CHANNEL!" ^
+            --channel conda-forge/label/python_rc ^
+            --channel conda-forge ^
+            "python==%PY_VERSION%=*_%ABI_TAG%" ^
+            "libpython-static==%PY_VERSION%=*_%ABI_TAG%" ^
+            ripgrep cmake ninja
+        if !errorlevel! neq 0 exit /b !errorlevel!
+        echo ::group::Installed packages
+        "%MAMBA_EXE%" list --prefix "%TEST_PREFIX%"
+        echo ::endgroup::
+
+    # Guard against silently testing a python that came from conda-forge rather
+    # than the packages we just built.
+    - name: Verify python and libpython-static came from the local channel
+      shell: pwsh
+      run: |
+        $ErrorActionPreference = 'Stop'
+        $prefix = "$env:RUNNER_TEMP\test-env"
+        foreach ($pkg in @('python', 'libpython-static')) {
+          $meta = Get-ChildItem "$prefix\conda-meta\$pkg-*.json" |
+                  Where-Object { $_.Name -match "^$pkg-\d" }
+          if ($meta.Count -ne 1) {
+            throw "expected exactly one $pkg record in conda-meta, found $($meta.Count)"
+          }
+          $info = Get-Content $meta[0].FullName -Raw | ConvertFrom-Json
+          "$pkg : $($info.version) $($info.build)  <- $($info.url)"
+          if ($info.url -notmatch 'win-arm64-channel') {
+            throw "$pkg was not installed from the local build channel: $($info.url)"
+          }
+          if ($info.subdir -ne 'win-arm64') {
+            throw "$pkg has unexpected subdir '$($info.subdir)', expected win-arm64"
+          }
+        }
+
+    - name: Run meta.yaml Windows tests natively
+      shell: cmd
+      env:
+        CI: github_actions
+        PY_FREETHREADING: ${{ matrix.freethreading }}
+        # win-arm64 only builds the release config, see recipe/conda_build_config.yaml
+        PY_INTERP_DEBUG: 'no'
+        # consumed by recipe/run_test.py, read from .ci_support/<CONFIG>.yaml
+        openssl: ${{ steps.resolve-version.outputs.openssl }}
+        tk: ${{ steps.resolve-version.outputs.tk }}
+        # The conda vs2022_win-arm64 compiler package depends on vswhere, which
+        # has no win-arm64 build, so we use the runner's own VS 2022 install
+        # (which ships native ARM64 MSVC) for the cmake test.
+        RUN_CMAKE_TEST: '1'
+      run: |
+        setlocal enableextensions enabledelayedexpansion
+        set "MAMBA_EXE=%RUNNER_TEMP%\micromamba\micromamba.exe"
+        set "TEST_PREFIX=%RUNNER_TEMP%\test-env"
+        :: Assign to a variable and use delayed expansion below: the literal
+        :: %ProgramFiles(x86)% expands to a path containing ')', which cmd would
+        :: treat as the end of the for /f block at parse time.
+        set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
+        if not exist "!VSWHERE!" (
+            echo ERROR: vswhere.exe not found at !VSWHERE!
+            exit /b 1
+        )
+        for /f "usebackq delims=" %%i in (`"!VSWHERE!" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.ARM64 -property installationPath`) do set "VSINSTALL=%%i"
+        if not defined VSINSTALL (
+            echo ERROR: no Visual Studio install with ARM64 C++ tools found
+            exit /b 1
+        )
+        echo Using Visual Studio at !VSINSTALL!
+        call "!VSINSTALL!\VC\Auxiliary\Build\vcvarsall.bat" arm64
+        if !errorlevel! neq 0 exit /b !errorlevel!
+        :: micromamba run activates the prefix, so the interpreter under test and
+        :: its activation scripts are on PATH inside the batch script. TEST_PREFIX
+        :: is inherited by the child as a fallback in case CONDA_PREFIX is not
+        :: exported by the launcher.
+        "%MAMBA_EXE%" run --prefix "%TEST_PREFIX%" cmd /c "recipe\test_win_arm64.bat"
+        if !errorlevel! neq 0 exit /b !errorlevel!

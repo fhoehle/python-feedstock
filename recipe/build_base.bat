@@ -71,6 +71,16 @@ if "%PY_FREETHREADING%" == "yes" (
   set "EXE_T="
 )
 
+:: CPython 3.15 moved the free-threaded build outputs from PCbuild\<arch>\ to
+:: PCbuild\<arch>t\: PCbuild/python.props now selects BuildPath<Arch>t whenever
+:: DisableGil is true. Without this the staging below silently finds nothing
+:: ("WARNING :: ...\arm64\python315t.dll does not exist") and the build fails
+:: later on `xcopy ...\*.pyd` with "File not found - *.pyd".
+if "%PY_FREETHREADING%" == "yes" (
+  set "HOST_DIR=!HOST_DIR!t"
+  set "BUILD_DIR=!BUILD_DIR!t"
+)
+
 :: patches/0014-Unvendor-tcltk.patch points tclDir/tkDir/tcltkDir at the conda
 :: prefix but leaves TclVersion alone, and CPython 3.15 bumped its default from
 :: 8.6.15.0 to 9.0.4.0 (PCbuild/tcltk.props). That makes _tkinter link against

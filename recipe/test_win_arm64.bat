@@ -155,8 +155,10 @@ if /i "%RUN_CMAKE_TEST%" == "1" (
         pushd tests
         pushd cmake
         :: meta.yaml passes the plain "X.Y.Z" recipe version here. Derive the
-        :: same shape from the interpreter: platform.python_version() would
-        :: yield "3.15.0rc1", which find_package() cannot parse as a version.
+        :: same shape from the interpreter, since platform.python_version
+        :: yields "3.15.0rc1", which find_package cannot parse as a version.
+        :: Note: no parentheses in these comments -- cmd parses the whole
+        :: `if (...)` block up front and a ")" in a "::" line ends it early.
         for /f "delims=" %%i in ('python -c "import sys; print('%%s.%%s.%%s' %% sys.version_info[:3])"') do set "PY_FULL_VER=%%i"
         echo Requesting PY_VER=!PY_FULL_VER!
         cmake -GNinja -DPY_VER=!PY_FULL_VER! --debug-find --trace --debug-output --debug-trycompile .

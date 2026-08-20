@@ -53,7 +53,21 @@ if "%PY_INTERP_DEBUG%"=="yes" (
   set _D=
 )
 
-set PGO=--pgo
+:: The PGO training run uses PCbuild\<arch>\instrumented\python.exe, and the DLL
+:: search path added by patches/0007-Add-CondaEcosystemModifyDllSearchPath.patch
+:: is resolved relative to the interpreter's own directory. There is no
+:: ...\instrumented\Library\bin, so every unvendored dependency is unreachable
+:: from the instrumented interpreter: _ctypes cannot find ffi-8.dll, _hashlib
+:: cannot find libcrypto and pyexpat cannot find libexpat, which fails
+:: test_codecs (it imports ctypes), test_hashlib, test_xml_etree and
+:: test_xml_etree_c. test_bz2, test_lzma and test_sqlite3 are skipped for the
+:: same reason.
+::
+:: That was already true on 3.14, but harmless: build.bat ran the training job
+:: and ignored its exit code. CPython 3.15 propagates it (see :RunPgoJob), so
+:: the four failures now abort the build. Drop them from the training job to get
+:: back the profile 3.14 actually collected.
+set PGO=--pgo-job "-m test --pgo -x test_codecs test_hashlib test_xml_etree test_xml_etree_c"
 if "%DEBUG_C%"=="yes" (
   set PGO=
 )

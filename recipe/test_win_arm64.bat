@@ -21,6 +21,9 @@
 :: openssl:           openssl major.minor from .ci_support/<CONFIG>.yaml, consumed by run_test.py
 :: tk:                tk major.minor from .ci_support/<CONFIG>.yaml, consumed by run_test.py
 :: RUN_CMAKE_TEST:    1/0 (default 1), the cmake test needs a working MSVC ARM64 toolchain
+:: TEST_RESULT_FILE:  optional, a file that is deleted on entry and only written
+::                    once every test has passed. Callers that cannot rely on the
+::                    exit code of their launcher can check for it instead.
 
 echo on
 setlocal enableextensions enabledelayedexpansion
@@ -47,6 +50,7 @@ set "PATH=%PREFIX%;%PREFIX%\Library\bin;%PREFIX%\Scripts;%PATH%"
 if "%PY_FREETHREADING%" == "" set "PY_FREETHREADING=no"
 if "%PY_INTERP_DEBUG%" == "" set "PY_INTERP_DEBUG=no"
 if "%RUN_CMAKE_TEST%" == "" set "RUN_CMAKE_TEST=1"
+if not "%TEST_RESULT_FILE%" == "" if exist "%TEST_RESULT_FILE%" del /Q "%TEST_RESULT_FILE%"
 
 :: ---------------------------------------------------------------------------
 :: Sanity checks that are specific to this job: the whole point of running on
@@ -148,30 +152,19 @@ if not exist %PREFIX%\Scripts\pydoc.exe exit 1
 if not exist %PREFIX%\include\pyconfig.h exit 1
 call :end_group
 
-if /i "%RUN_CMAKE_TEST%" == "1" (
-    if /i "%PY_FREETHREADING%" == "no" (
-        call :start_group "cmake FindPythonInterp/FindPythonLibs"
-        :: TODO: use the new FindPython3 which supports freethreading
-        pushd tests
-        pushd cmake
-        :: meta.yaml passes the plain "X.Y.Z" recipe version here. Derive the
-        :: same shape from the interpreter, since platform.python_version
-        :: yields "3.15.0rc1", which find_package cannot parse as a version.
-        :: Note: no parentheses in these comments -- cmd parses the whole
-        :: `if (...)` block up front and a ")" in a "::" line ends it early.
-        for /f "delims=" %%i in ('python -c "import sys; print('%%s.%%s.%%s' %% sys.version_info[:3])"') do set "PY_FULL_VER=%%i"
-        echo Requesting PY_VER=!PY_FULL_VER!
-        cmake -GNinja -DPY_VER=!PY_FULL_VER! --debug-find --trace --debug-output --debug-trycompile .
-        if !errorlevel! neq 0 exit /b !errorlevel!
-        popd
-        popd
-        call :end_group
-    ) else (
-        echo Skipping the cmake test: FindPythonLibs does not support free-threading builds
-    )
-) else (
-    echo Skipping the cmake test: RUN_CMAKE_TEST=%RUN_CMAKE_TEST%
-)
+:: TODO: use the new FindPython3 which supports freethreading
+:: Flat gotos rather than an if/else block: see the note on :run_cmake_test.
+if /i not "%RUN_CMAKE_TEST%" == "1" goto :skip_cmake_disabled
+if /i not "%PY_FREETHREADING%" == "no" goto :skip_cmake_freethreading
+call :run_cmake_test
+if !errorlevel! neq 0 exit /b !errorlevel!
+goto :after_cmake
+:skip_cmake_disabled
+echo Skipping the cmake test: RUN_CMAKE_TEST=%RUN_CMAKE_TEST%
+goto :after_cmake
+:skip_cmake_freethreading
+echo Skipping the cmake test: FindPythonLibs does not support free-threading builds
+:after_cmake
 
 call :start_group "run_test.py"
 python run_test.py
@@ -199,6 +192,44 @@ echo libpython-static is installed ^(no Windows test commands in meta.yaml^)
 call :end_group
 
 echo All native win-arm64 tests passed
+if not "%TEST_RESULT_FILE%" == "" echo passed> "%TEST_RESULT_FILE%"
+exit /b 0
+
+:: ---------------------------------------------------------------------------
+:: The cmake test, as a subroutine rather than inline in an `if (...)` block:
+:: cmd parses such a block in full before running it, so a ")" anywhere inside
+:: -- including in a "::" comment -- terminates it early, and a "::" line is
+:: parsed as a drive-relative path ("The system cannot find the drive
+:: specified.") instead of a label. Neither problem exists in a subroutine.
+:: ---------------------------------------------------------------------------
+:run_cmake_test
+call :start_group "cmake FindPythonInterp/FindPythonLibs"
+pushd tests\cmake
+if !errorlevel! neq 0 exit /b !errorlevel!
+
+:: meta.yaml passes the plain "X.Y.Z" recipe version here. Derive the same shape
+:: from the interpreter, since platform.python_version() yields "3.15.0rc1",
+:: which find_package() cannot parse as a version.
+for /f "delims=" %%i in ('python -c "import sys; print('%%s.%%s.%%s' %% sys.version_info[:3])"') do set "PY_FULL_VER=%%i"
+if "!PY_FULL_VER!" == "" (
+    echo ERROR: could not determine the full python version
+    exit /b 1
+)
+
+:: FindPythonInterp searches for python3.15/python3 first and only falls back to
+:: a plain "python" pass if that finds nothing. A conda prefix has no
+:: python3.exe, so under conda-build the fallback picks up the interpreter under
+:: test -- but the windows-11-arm image has C:\hostedtoolcache\windows\Python\
+:: <ver>\arm64\python3.exe on PATH, which wins the first pass and then fails the
+:: version check ("Found unsuitable version 3.13.15"). Point cmake at the
+:: interpreter explicitly; FindPythonLibs takes it as its hint in turn.
+:: cmake wants forward slashes in a path it stores in the cache.
+set "PY_EXE_CMAKE=%PREFIX:\=/%/python.exe"
+echo Requesting PY_VER=!PY_FULL_VER! with PYTHON_EXECUTABLE=!PY_EXE_CMAKE!
+cmake -GNinja -DPY_VER=!PY_FULL_VER! "-DPYTHON_EXECUTABLE=!PY_EXE_CMAKE!" --debug-find --trace --debug-output --debug-trycompile .
+if !errorlevel! neq 0 exit /b !errorlevel!
+popd
+call :end_group
 exit /b 0
 
 :: Logging subroutines

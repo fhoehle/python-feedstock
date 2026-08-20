@@ -654,5 +654,22 @@ jobs:
         :: its activation scripts are on PATH inside the batch script. TEST_PREFIX
         :: is inherited by the child as a fallback in case CONDA_PREFIX is not
         :: exported by the launcher.
+        ::
+        :: `micromamba run` does not reliably propagate the child's exit code on
+        :: Windows: run 32340455713 had the script abort on a cmake failure and
+        :: this step still went green. So the script also writes a marker file as
+        :: its very last action and we require it, rather than trusting only the
+        :: exit code.
+        set "TEST_RESULT_FILE=%RUNNER_TEMP%\test-passed-${{ matrix.freethreading }}.marker"
+        if exist "!TEST_RESULT_FILE!" del /Q "!TEST_RESULT_FILE!"
         "%MAMBA_EXE%" run --prefix "%TEST_PREFIX%" cmd /c "recipe\test_win_arm64.bat"
-        if !errorlevel! neq 0 exit /b !errorlevel!
+        set "MAMBA_RUN_EXITCODE=!errorlevel!"
+        echo micromamba run exited with !MAMBA_RUN_EXITCODE!
+        if !MAMBA_RUN_EXITCODE! neq 0 exit /b !MAMBA_RUN_EXITCODE!
+        if not exist "!TEST_RESULT_FILE!" (
+            echo ERROR: the test script did not run to completion -- it exited
+            echo early without writing !TEST_RESULT_FILE!. Check the log above for
+            echo the first failing command.
+            exit /b 1
+        )
+        echo Test script completed, marker file present
